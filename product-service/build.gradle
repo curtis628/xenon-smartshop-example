@@ -5,6 +5,7 @@ plugins {
 }
 
 apply from: '../base.gradle'
+version = '1.0.0'
 
 jar {
     manifest {
