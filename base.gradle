@@ -4,7 +4,6 @@ targetCompatibility = 1.8
 ext {
     commonsLangVersion = "3.4"
     junitVersion = "4.12"
-    slf4jVersion = "1.7.14"
     xenonVersion = "0.7.0"
 }
 
@@ -16,10 +15,9 @@ task wrapper(type: Wrapper) {
     gradleVersion = "2.3"
 }
 
-build.dependsOn shadowJar // Call 'shadowJar' task before 'build'
+build.dependsOn shadowJar // Call "shadowJar" task before "build"
 
 dependencies {
-    compile "org.slf4j:slf4j-api:$slf4jVersion"
     compile "org.apache.commons:commons-lang3:$commonsLangVersion"
     testCompile "junit:junit:$junitVersion"
 }

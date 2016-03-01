@@ -2,15 +2,12 @@ package com.tcurt628.smartshop.product;
 
 import com.vmware.xenon.common.*;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Created by tcurtis on 2/24/16.
  */
 public class ProductService extends StatefulService {
 
-   private static final Logger logger = LoggerFactory.getLogger(ProductService.class);
    public static final String FACTORY_LINK = "/products";
 
    /**
@@ -24,7 +21,6 @@ public class ProductService extends StatefulService {
       super(ProductServiceState.class);
       super.toggleOption(ServiceOption.PERSISTENCE, true);
       super.toggleOption(ServiceOption.REPLICATION, true);
-      logger.debug("Constructed new ProductService instance...");
    }
 
    public static class ProductServiceState extends ServiceDocument {
@@ -38,9 +34,9 @@ public class ProductService extends StatefulService {
       try {
          validateState(post);
          post.complete();
-         logger.debug("handleStart() completed successfully. [post={}]", post);
+         logInfo("handleStart() completed successfully. [post=%s]", post);
       } catch (Exception e) {
-         logger.error("handleStart() FAILED! post: " + post, e);
+         logWarning("handleStart() FAILED! [post: %s] [error: %s]", post, e);
          post.fail(e);
       }
    }
@@ -62,6 +58,7 @@ public class ProductService extends StatefulService {
 
    @Override
    public void handlePut(Operation put) {
+      logFine("handlePut(). [put=%s]", put);
       ProductServiceState currentState = getState(put);
       validateState(put);
 

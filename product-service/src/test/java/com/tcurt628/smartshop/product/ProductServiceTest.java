@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import java.net.URI;
 import java.util.UUID;
+import java.util.logging.Level;
 
 import static com.tcurt628.smartshop.product.ProductService.ProductServiceState;
 import static org.junit.Assert.assertEquals;
@@ -25,6 +26,7 @@ public class ProductServiceTest extends BasicReusableHostTestCase {
 
    @Before
    public void setUp() throws Throwable {
+      this.host.setLoggingLevel(Level.FINE);
       this.host.startServiceAndWait(ProductService.createFactory(), ProductService.FACTORY_LINK, new ServiceDocument());
    }
 
@@ -57,7 +59,7 @@ public class ProductServiceTest extends BasicReusableHostTestCase {
       assertEquals(productPrice, responses[0].price, 0);
       URI childURI = UriUtils.buildUri(this.host, responses[0].documentSelfLink);
 
-      // update price and description
+      // update
       this.host.testStart(1);
       String newDescription = "Updated description";
       double newPrice = 1.10;
