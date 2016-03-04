@@ -1,6 +1,5 @@
 package com.tcurt628.smartshop.review;
 
-import com.tcurt628.smartshop.model.Product;
 import com.vmware.xenon.common.*;
 import com.vmware.xenon.services.common.QueryTask;
 import com.vmware.xenon.services.common.ServiceUriPaths;
