@@ -1,6 +1,6 @@
 # xenon-smartshop-example
 
-An simple, distributed application composed of microservices. All services are implemented with [Xenon](https://github.com/vmware/xenon/).
+A simple, distributed application composed of microservices. All services are implemented with [Xenon](https://github.com/vmware/xenon/).
 
 ## Build and Run product-service
 
@@ -13,14 +13,14 @@ cd product-service
 > The above builds `product-service` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
 
 ## Build and Run review-service
-Similarly, to build a run `review-service` on port 8001, run:
+Similarly (in a separate command window), to build and run `review-service` on port 8001, run:
 
 ```bash
 cd review-service
 ./gradlew build && java -jar build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=build/tmp/xenon
 ```
 
-## Brief introduction to services (Domain Model)
+## Brief introduction to the services (Domain Model)
 The domain model for this "smartshop" is admittedly simple, but it does give a good example of how to use Xenon to build, and individually scale microservices that communicate with each other.
 
 A `Product` (defined by [ProductServiceState](./product-service/src/main/java/com/tcurt628/smartshop/product/ProductService.java#L27) ) consists of the following:
@@ -38,6 +38,9 @@ A `Review` (defined by [ReviewServiceState](./review-service/src/main/java/com/t
 Below are some helpful REST calls for interacting with the distributed application.
 
 ### product-service API calls
+
+NOTE: The `product` node group and selector is created on startup by [ProductHost.java](./product-service/src/main/java/com/tcurt628/smartshop/product/ProductHost.java#L40)
+
 * `GET` all node groups: `http://localhost:8000/core/node-groups`
 * `GET` `product` node group: `http://localhost:8000/core/node-groups/product`
 * `GET` `product` node selector: `http://localhost:8000/core/node-selectors/product`
@@ -50,7 +53,7 @@ Below are some helpful REST calls for interacting with the distributed applicati
   "price": 59.99
 }
 ```
-* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find all products: http://localhost:8000/core/query-tasks
+* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find all products: `http://localhost:8000/core/query-tasks`
 ```json
 {
   "taskInfo": {
@@ -68,7 +71,7 @@ Below are some helpful REST calls for interacting with the distributed applicati
   "indexLink": "/core/document-index"
 }
 ```
-* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find a product by it's id (aka: `documentSelfLink`): 
+* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find a product by it's id (aka: `documentSelfLink`): `http://localhost:8000/core/query-tasks`
 ```json
 {
   "taskInfo": {
@@ -101,6 +104,9 @@ Below are some helpful REST calls for interacting with the distributed applicati
 ```
 
 ### review-service API calls
+
+NOTE: The `review` node group and selector is created on startup by [ReviewHost.java](review-service/src/main/java/com/tcurt628/smartshop/review/ReviewHost.java#L41)
+
 * `GET` all node groups: `http://localhost:8001/core/node-groups`
 * `GET` `product` node group: `http://localhost:8001/core/node-groups/product`
 * `GET` `product` node selector: `http://localhost:8001/core/node-selectors/product`
@@ -134,4 +140,14 @@ Below are some helpful REST calls for interacting with the distributed applicati
   "indexLink": "/core/document-index"
 }
 ```
+* `POST` to create a new review: `http://localhost:8001/reviews`
 
+> NOTE: This is not working yet! I'm trying to get help from Xenon gurus where I'm going wrong...
+```json
+{
+  "stars": 5,
+  "author": "tcurtis@vmware.com",
+  "content": "Love it",
+  "productLink": "/products/1cdc3519-a03f-4373-9686-2ce2f0952a0d"
+}`
+```
