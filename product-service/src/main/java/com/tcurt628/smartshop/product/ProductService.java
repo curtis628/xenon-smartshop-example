@@ -21,6 +21,7 @@ public class ProductService extends StatefulService {
       super(ProductServiceState.class);
       super.toggleOption(ServiceOption.PERSISTENCE, true);
       super.toggleOption(ServiceOption.REPLICATION, true);
+      super.setPeerNodeSelectorPath(ProductHost.PRODUCT_NODE_SELECTOR_URI);
    }
 
    public static class ProductServiceState extends ServiceDocument {
