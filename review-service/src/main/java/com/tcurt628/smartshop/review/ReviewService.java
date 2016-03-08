@@ -1,11 +1,10 @@
 package com.tcurt628.smartshop.review;
 
 import com.vmware.xenon.common.*;
-import com.vmware.xenon.services.common.QueryTask;
-import com.vmware.xenon.services.common.ServiceUriPaths;
 import org.apache.commons.lang3.StringUtils;
 
-import java.net.URI;
+import java.util.Collections;
+import java.util.Map;
 
 /**
  * Created by tcurtis on 2/24/16.
@@ -16,6 +15,7 @@ public class ReviewService extends StatefulService {
    public static final Integer MAX_STAR = 5;
 
    public static final String FACTORY_LINK = "/reviews";
+   public static final String PRODUCT_FACTORY_LINK = "/products";
 
    /**
     * Create a default factory service that starts instances of this service on POST.
@@ -52,11 +52,10 @@ public class ReviewService extends StatefulService {
    @Override
    public void handleStart(Operation post) {
       try {
-         validateState(post);
-         post.complete();
-         logInfo("handleStart() completed successfully. [post=%s]", post);
+         // validateInitialState handles marking 'post' as complete or fail
+         validateInitialState(post);
       } catch (Exception e) {
-         logWarning("handleStart() FAILED! [post: %s] [error: %s]", post, e);
+         logWarning("Error on handleStart for: %s", post);
          post.fail(e);
       }
    }
@@ -74,7 +73,8 @@ public class ReviewService extends StatefulService {
       }
    }
 
-   private void validateState(Operation post) {
+   /** Validates initial state of a {@code Review}. Marks {@code post} as complete if successful. */
+   private void validateInitialState(Operation post) {
       if (!post.hasBody()) {
          throw new IllegalArgumentException("Must include non-empty body");
       }
@@ -90,38 +90,37 @@ public class ReviewService extends StatefulService {
          throw new IllegalArgumentException("productLink cannot be empty");
       }
 
-      QueryTask.Query productQuery = QueryTask.Query.Builder.create()
-            .addFieldClause(ServiceDocument.FIELD_NAME_KIND, "com:tcurt628:smartshop:product:ProductService:ProductServiceState")
-            .addFieldClause(ServiceDocument.FIELD_NAME_SELF_LINK, state.productLink)
-            .build();
+      String target = PRODUCT_FACTORY_LINK + String.format("?$expand&filter=(documentSelfLink eq '%s')", state.productLink);
+      Operation getProduct = Operation.createGet(this, target)
+            .setReferer(this.getUri())
+            .setCompletion(
+                  (op, ex) -> {
+                     if (ex != null) {
+                        logSevere("Error during completion logic: [productLink=%s] [exception=%s]", state.productLink, ex);
+                        throw new IllegalStateException("Error looking up productLink: " + state.productLink, ex);
+                     }
 
-      QueryTask queryTask = QueryTask.Builder.createDirectTask()
-            .setQuery(productQuery)
-            .build();
+                     ServiceDocumentQueryResult result = op.getBody(ServiceDocumentQueryResult.class);
+                     logFine("Forwarding OData query returned result: %s", result);
 
-      URI queryTaskUri = UriUtils.buildUri(this.getHost(), ServiceUriPaths.CORE_QUERY_TASKS);
+                     Map<String, Object> matchedDocuments =
+                           result == null || result.documents == null ? Collections.emptyMap() : result.documents;
+                     logFine("result.documents: %s", matchedDocuments);
 
-      // This will create the POST that corresponds to the query-user-1.post, above
-      Operation postQuery = Operation.createPost(queryTaskUri)
-            .setBody(queryTask)
-            .setReferer(post.getReferer())
-            .setCompletion((op, ex) -> {
-               if (ex != null) {
-                 throw new IllegalArgumentException("Error looking up productLink: " + state.productLink, ex);
-               }
+                     Object productMatch = matchedDocuments.get(state.productLink);
+                     logFine("productMatch: %s", productMatch);
+                     if (productMatch == null) {
+                        String message = String.format("[productLink=%s] does not exist", state.productLink);
+                        logWarning(message);
+                        post.fail(new IllegalArgumentException(message));
+                        return;
+                     }
 
-               // This examines the response from the Query Task Service
-               // In our case, we decide a user exists if there's at least
-               // one user in the response.
-               QueryTask queryResponse = op.getBody(QueryTask.class);
-               if (queryResponse.results.documentLinks != null
-                     && queryResponse.results.documentLinks.isEmpty()) {
-                  throw new IllegalArgumentException("No product found: " + state.productLink);
-               }
-
-               logInfo("Found valid product! [results.documentLinks=%s]", queryResponse.results.documentLinks);
-            });
-      sendRequest(postQuery);
+                     logFine("productLink found! Review is valid. Marking complete...");
+                     post.complete();
+                  }
+            );
+      this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getProduct);
    }
 
    @Override

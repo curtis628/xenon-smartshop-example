@@ -102,6 +102,7 @@ NOTE: The `product` node group and selector is created on startup by [ProductHos
   "indexLink": "/core/document-index"
 }
 ```
+* `GET` for [odata-query](https://github.com/vmware/xenon/wiki/QueryTaskService#odata-filter-queries) to return all products matching `documentSelfLink` of `/products/*`: http://localhost:8000/core/odata-queries?$filter=(documentSelfLink eq '/products/*')
 
 ### review-service API calls
 
@@ -122,32 +123,17 @@ NOTE: The `review` node group and selector is created on startup by [ReviewHost.
 * `GET` `review` node group: `http://localhost:8001/core/node-groups/review`
 * `GET` `review` node selector: `http://localhost:8001/core/node-selectors/review`
 * `GET` all reviews: `http://localhost:8001/reviews`
-* `POST` (to `reviewHost-8001`) for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find all products: `http://localhost:8001/core/query-tasks`
-```json
-{
-  "taskInfo": {
-    "isDirect": true
-  },
-  "querySpec": {
-    "query": {
-      "term": {
-        "propertyName": "documentKind",
-        "matchValue": "com:tcurt628:smartshop:product:ProductService:ProductServiceState",
-        "matchType": "TERM"
-      }
-    }
-  },
-  "indexLink": "/core/document-index"
-}
-```
+* `GET` all `/products` using forwarding on the node-selector: `http://localhost:8001/core/node-selectors/product/forwarding?path=/products&target=KEY_HASH`
+  * NOTE: If you use a `path` that includes a specific product (ie: `/products/123`) and that productId doesn't exist... then the query will **block** until it is created (or times out)... likely not what you want. See query below that supports the "not found" case much better.
+* `GET` a product by its `documentSelfLink` using a forwarding, odata query: `http://localhost:8001/core/node-selectors/product/forwarding?target=KEY_HASH&path=/products?expand&$filter=(documentSelfLink eq '/products/ffebe3b1-31f0-4046-aea4-e8919bc87ce3')`
+  * Supports both the "happy case" (`productLink` points to valid product) and "not found case" (`productLink` doesn't exist)
 * `POST` to create a new review: `http://localhost:8001/reviews`
-
-> NOTE: This is not working yet! I'm trying to get help from Xenon gurus where I'm going wrong...
 ```json
 {
   "stars": 5,
   "author": "tcurtis@vmware.com",
   "content": "Love it",
-  "productLink": "/products/1cdc3519-a03f-4373-9686-2ce2f0952a0d"
+  "productLink": "/products/ffebe3b1-31f0-4046-aea4-e8919bc87ce3"
 }`
 ```
+  * If `productLink` exists, then the review is valid and will be created. If it's not found, an error is returned and the review is not created
