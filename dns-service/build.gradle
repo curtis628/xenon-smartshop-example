@@ -9,11 +9,11 @@ version = '1.0.0'
 
 jar {
     manifest {
-        attributes "Main-Class": "com.tcurt628.smartshop.product.ProductHost"
+        attributes "Main-Class": "com.tcurt628.smartshop.dns.DnsHost"
     }
 }
 
 dependencies {
-    compile "com.vmware.xenon:xenon-common:$xenonVersion","com.vmware.xenon:xenon-dns:$xenonVersion"
+    compile "com.vmware.xenon:xenon-common:$xenonVersion","com.vmware.xenon:xenon-ui:$xenonVersion","com.vmware.xenon:xenon-dns:$xenonVersion"
     testCompile "com.vmware.xenon:xenon-common:$xenonVersion:tests"
 }

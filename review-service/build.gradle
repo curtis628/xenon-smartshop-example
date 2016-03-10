@@ -14,6 +14,6 @@ jar {
 }
 
 dependencies {
-    compile "com.vmware.xenon:xenon-common:$xenonVersion"
+    compile "com.vmware.xenon:xenon-common:$xenonVersion","com.vmware.xenon:xenon-dns:$xenonVersion"
     testCompile "com.vmware.xenon:xenon-common:$xenonVersion:tests"
 }

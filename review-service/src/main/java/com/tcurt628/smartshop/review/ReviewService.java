@@ -1,8 +1,11 @@
 package com.tcurt628.smartshop.review;
 
 import com.vmware.xenon.common.*;
+import com.vmware.xenon.dns.services.DNSService;
+import com.vmware.xenon.services.common.ServiceUriPaths;
 import org.apache.commons.lang3.StringUtils;
 
+import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
 
@@ -15,6 +18,7 @@ public class ReviewService extends StatefulService {
    public static final Integer MAX_STAR = 5;
 
    public static final String FACTORY_LINK = "/reviews";
+   public static final String PRODUCT_SERVICE_NAME = "ProductService";
    public static final String PRODUCT_FACTORY_LINK = "/products";
 
    /**
@@ -90,42 +94,104 @@ public class ReviewService extends StatefulService {
          throw new IllegalArgumentException("productLink cannot be empty");
       }
 
+      // Here are two ways of discovering the product service from review service
+
+      // 1st Way - is to query the node selector
+
       String target = PRODUCT_FACTORY_LINK + String.format("?$expand&filter=(documentSelfLink eq '%s')", state.productLink);
       Operation getProduct = Operation.createGet(this, target)
             .setReferer(this.getUri())
             .setCompletion(
                   (op, ex) -> {
                      if (ex != null) {
-                        logSevere("Error during completion logic: [productLink=%s] [exception=%s]", state.productLink, ex);
+                        logSevere("Error during node selector logic: [productLink=%s] [exception=%s]", state.productLink, ex);
                         throw new IllegalStateException("Error looking up productLink: " + state.productLink, ex);
                      }
 
                      ServiceDocumentQueryResult result = op.getBody(ServiceDocumentQueryResult.class);
-                     logFine("Forwarding OData query returned result: %s", result);
+                     logInfo("Forwarding OData query returned result: %s", result);
 
                      Map<String, Object> matchedDocuments =
                            result == null || result.documents == null ? Collections.emptyMap() : result.documents;
-                     logFine("result.documents: %s", matchedDocuments);
+                     logInfo("result.documents: %s", matchedDocuments);
 
                      Object productMatch = matchedDocuments.get(state.productLink);
-                     logFine("productMatch: %s", productMatch);
+                     logInfo("productMatch: %s", productMatch);
                      if (productMatch == null) {
                         String message = String.format("[productLink=%s] does not exist", state.productLink);
                         logWarning(message);
-                        post.fail(new IllegalArgumentException(message));
+                        // Ideally we want to fail here, but since we want to show the second way of querying, we will do it later
+//                        post.fail(new IllegalArgumentException(message));
                         return;
                      }
 
-                     logFine("productLink found! Review is valid. Marking complete...");
-                     post.complete();
+                     logInfo("productLink found using node selector! Review is valid. Marking complete...");
+                     // Ideally we want to complete here, but since we want to show the second way of querying, we will do it later
+//                     post.complete();
                   }
             );
       this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getProduct);
+
+
+      // 2nd Way - is to query the DNS, get the host where product is running and issue a GET on that directly
+
+      String productServiceDNSLookupQuery = String.format("$filter=serviceName eq %s", PRODUCT_SERVICE_NAME);
+      URI productServiceDNSLookupURI = UriUtils.buildUri(ReviewHost.hostArguments.dnshost, ReviewHost.hostArguments.dnsport, ServiceUriPaths.DNS + "/query", productServiceDNSLookupQuery);
+
+      Operation.CompletionHandler productLookupHandler = (op, ex) -> {
+         if(ex != null) {
+            String message = String.format("[productLink=%s] does not exist", state.productLink);
+            logSevere(message);
+            post.fail(new IllegalArgumentException(message));
+         }
+         else {
+            logInfo("productLink found using DNS lookup! Review is valid. Marking complete...");
+            post.complete();
+         }
+      };
+
+      Operation.CompletionHandler productServiceDNSLookupQueryHandler = (o, e) -> {
+         if(e != null) {
+            logSevere("Error during product service DNS lookup: [ProductLink=%s], [Exception=%s]", state.productLink, e);
+            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
+         }
+         ServiceDocumentQueryResult result = o.getBody(ServiceDocumentQueryResult.class);
+
+         if(result.documentLinks == null || result.documentLinks.size() != 1) {
+            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [ProductLink=%s], [Exception=%s]", state.productLink, e);
+            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
+         }
+
+         DNSService.DNSServiceState serviceState =
+               Utils.fromJson((String) result.documents.get(result.documentLinks.get(0)),
+                     DNSService.DNSServiceState.class);
+
+         if(serviceState.nodeReferences.size() > 0) {
+            URI productURI = UriUtils.extendUri(serviceState.nodeReferences.iterator().next(),state.productLink);
+            logInfo("Product URI = [%s]", productURI);
+
+            Operation getProductDirect = Operation.createGet(productURI)
+                  .addPragmaDirective(Operation.PRAGMA_DIRECTIVE_NO_QUEUING)
+                  .setCompletion(productLookupHandler);
+            getProductDirect.setReferer(this.getUri());
+            this.getHost().sendRequest(getProductDirect);
+         }
+         else {
+            logSevere("Error during product service DNS lookup: No Nodes found [ProductLink=%s], [Exception=%s]", state.productLink, e);
+            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
+         }
+      };
+
+
+      Operation getProductNodeFromDNS = Operation.createGet(productServiceDNSLookupURI).setCompletion(productServiceDNSLookupQueryHandler);
+      getProductNodeFromDNS.setReferer(this.getUri());
+
+      this.getHost().sendRequest(getProductNodeFromDNS);
    }
 
    @Override
    public void handlePatch(Operation patch) {
-      logFine("handlePatch(). [patch=%s]", patch);
+      logInfo("handlePatch(). [patch=%s]", patch);
       ReviewServiceState currentState = getState(patch);
       ReviewUpdateRequest updateRequest = patch.getBody(ReviewUpdateRequest.class);
 

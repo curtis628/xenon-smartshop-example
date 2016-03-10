@@ -1,11 +1,13 @@
 package com.tcurt628.smartshop.product;
 
 import com.vmware.xenon.common.*;
+import com.vmware.xenon.dns.services.DNSFactoryService;
 import com.vmware.xenon.services.common.ConsistentHashingNodeSelectorService;
 import com.vmware.xenon.services.common.NodeGroupFactoryService;
 import com.vmware.xenon.services.common.RootNamespaceService;
 import com.vmware.xenon.services.common.ServiceUriPaths;
 
+import java.net.URI;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +25,15 @@ public class ProductHost extends ServiceHost {
    public static final String PRODUCT_NODE_GROUP_URI = ServiceUriPaths.NODE_GROUP_FACTORY + "/" + PRODUCT_NODE_GROUP_NAME;
    public static final String PRODUCT_NODE_SELECTOR_URI = ServiceUriPaths.NODE_SELECTOR_PREFIX + "/" + PRODUCT_NODE_SELECTOR_NAME;
 
+   public static class Arguments {
+      public String dnshost;
+      public int dnsport;
+   }
+
+   public static Arguments hostArguments = new Arguments();
+
    public static void main(String[] args) throws Throwable {
+      CommandLineArgumentParser.parse(hostArguments, args);
       ProductHost h = new ProductHost();
       h.initialize(args);
       h.toggleDebuggingMode(true);
@@ -62,7 +72,27 @@ public class ProductHost extends ServiceHost {
             Operation.createPost(UriUtils.buildFactoryUri(this, ProductService.class)),
             ProductService.createFactory());
 
+      // Regiser our service with DNS
+      registerWithDNS();
       return this;
+   }
+
+
+   private void registerWithDNS() {
+      URI dnsHost = UriUtils.buildUri(hostArguments.dnshost, hostArguments.dnsport, null, null);
+
+      Operation.CompletionHandler completionHandler = (o, e) -> {
+         assert (e == null);
+         this.log(Level.INFO, "Successfully registered with DNS at " + dnsHost);
+      };
+
+      this.sendRequest(DNSFactoryService.createPost(dnsHost
+            ,this,
+            ProductService.FACTORY_LINK,
+            ProductService.class.getSimpleName(),
+            null,
+            ProductService.FACTORY_LINK + "/available",
+            1L).setCompletion(completionHandler));
    }
 
    //

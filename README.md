@@ -2,22 +2,42 @@
 
 A simple, distributed application composed of microservices. All services are implemented with [Xenon](https://github.com/vmware/xenon/).
 
+## Build Xenon Library
+
+To build the core Xenon library and install it in the local maven repository
+```bash
+$ git clone https://github.com/vmware/xenon.git
+$ cd xenon
+$ mvn clean install -DskipTests
+```
+
+## Build and Run dns-service
+
+To build and run `dns-service`, run:
+```bash
+$ cd dns-service
+$ ./gradlew build && java -jar build/libs/dns-service-1.0.0-all.jar --port=8002 --id=dnsHost-8002 --sandbox=build/tmp/xenon
+```
+
+> The above builds `dns-service` with gradle, and runs a single, standalone Xenon host located at port 8002 (with the id of `dnsHost-8002`). 
+
 ## Build and Run product-service
 
 To build and run `product-service`, run:
 ```bash
 cd product-service
-./gradlew build && java -jar build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=build/tmp/xenon
+./gradlew build && java -jar build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=build/tmp/xenon --dnshost=localhost --dnsport=8002
 ```
 
-> The above builds `product-service` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
+> The above builds `product-service` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). It also registers with the DNS server at the specified Host and Port.
+> To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
 
 ## Build and Run review-service
 Similarly (in a separate command window), to build and run `review-service` on port 8001, run:
 
 ```bash
 cd review-service
-./gradlew build && java -jar build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=build/tmp/xenon
+./gradlew build && java -jar build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=build/tmp/xenon --dnshost=localhost --dnsport=8002
 ```
 
 ## Brief introduction to the services (Domain Model)
@@ -71,7 +91,7 @@ NOTE: The `product` node group and selector is created on startup by [ProductHos
   "indexLink": "/core/document-index"
 }
 ```
-* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find a product by it's id (aka: `documentSelfLink`): `http://localhost:8000/core/query-tasks`
+* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find a product by its id (aka: `documentSelfLink`): `http://localhost:8000/core/query-tasks`
 ```json
 {
   "taskInfo": {
@@ -102,7 +122,37 @@ NOTE: The `product` node group and selector is created on startup by [ProductHos
   "indexLink": "/core/document-index"
 }
 ```
-* `GET` for [odata-query](https://github.com/vmware/xenon/wiki/QueryTaskService#odata-filter-queries) to return all products matching `documentSelfLink` of `/products/*`: http://localhost:8000/core/odata-queries?$filter=(documentSelfLink eq '/products/*')
+* `POST` for [QueryTask](https://github.com/vmware/xenon/wiki/Introduction-to-Service-Queries) to find a product by its name: `http://localhost:8000/core/query-tasks`
+```json
+{
+  "taskInfo": {
+    "isDirect": true
+  },
+  "querySpec": {
+      "query": {
+        "booleanClauses": [
+            {
+                "occurance": "MUST_OCCUR",
+                "term": {
+                    "propertyName": "documentKind",
+                    "matchValue": "com:tcurt628:smartshop:product:ProductService:ProductServiceState",
+                    "matchType": "TERM"
+                }
+             },
+             {
+                "occurance": "MUST_OCCUR",
+                "term": {
+                    "propertyName": "name",
+                    "matchValue": "Phillips Hue Lightbulb",
+                    "matchType": "TERM"
+                }
+             }
+        ]
+      }
+  },
+  "indexLink": "/core/document-index"
+}
+```
 
 ### review-service API calls
 
@@ -136,4 +186,5 @@ NOTE: The `review` node group and selector is created on startup by [ReviewHost.
   "productLink": "/products/ffebe3b1-31f0-4046-aea4-e8919bc87ce3"
 }`
 ```
-  * If `productLink` exists, then the review is valid and will be created. If it's not found, an error is returned and the review is not created
+The above tries to create a new `Review`. And it also validates the `productLink` via two ways
+
