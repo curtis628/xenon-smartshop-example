@@ -1,0 +1,16 @@
+plugins {
+  id 'com.github.johnrengelman.shadow' version '1.2.3'
+}
+
+build.dependsOn shadowJar // Call "shadowJar" task before "build"
+
+jar { 
+    manifest { 
+        attributes "Main-Class": "com.tcurt628.smartshop.review.ReviewHost" 
+    } 
+}
+
+dependencies {
+    compile project(':review-model')
+    compile "com.vmware.xenon:xenon-dns:$xenonVersion"
+}

@@ -1,0 +1,6 @@
+include 'model', 'service'
+
+project(':model').buildFileName = 'review-model.gradle'
+project(':model').name = 'review-model'
+project(':service').buildFileName = 'review-service.gradle'
+project(':service').name = 'review-service'

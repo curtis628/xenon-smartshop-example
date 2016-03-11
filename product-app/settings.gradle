@@ -1,0 +1,6 @@
+include 'model', 'service'
+
+project(':model').buildFileName = 'product-model.gradle'
+project(':model').name = 'product-model'
+project(':service').buildFileName = 'product-service.gradle'
+project(':service').name = 'product-service'

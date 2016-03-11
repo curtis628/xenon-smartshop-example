@@ -23,21 +23,21 @@ $ ./gradlew build && java -jar build/libs/dns-service-1.0.0-all.jar --port=8002 
 
 ## Build and Run product-service
 
-To build and run `product-service`, run:
+To build and run `product-app`, run:
 ```bash
-cd product-service
-./gradlew build && java -jar build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=build/tmp/xenon --dnshost=localhost --dnsport=8002
+cd product-app
+./gradlew build install && java -jar service/build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=service/build/tmp/xenon
 ```
 
-> The above builds `product-service` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). It also registers with the DNS server at the specified Host and Port.
-> To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
+> The above builds `product-app` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
+> It also uses `install` to upload the `product-model` dependency to the local maven repository so that the `review-service` project can declare a maven dependency on it
 
 ## Build and Run review-service
-Similarly (in a separate command window), to build and run `review-service` on port 8001, run:
+Similarly (in a separate command window), to build and run `review-app` on port 8001, run:
 
 ```bash
 cd review-service
-./gradlew build && java -jar build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=build/tmp/xenon --dnshost=localhost --dnsport=8002
+./gradlew build && java -jar service/build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=service/build/tmp/xenon
 ```
 
 ## Brief introduction to the services (Domain Model)

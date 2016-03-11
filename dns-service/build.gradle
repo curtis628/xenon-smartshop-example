@@ -4,8 +4,31 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '1.2.3' // builds fat jar with 'shadowJar' task
 }
 
-apply from: '../base.gradle'
+group = 'com.tcurt628.smartshop.product'
 version = '1.0.0'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+ext {
+    commonsLangVersion = "3.4"
+    junitVersion = "4.12"
+    xenonVersion = "0.7.1"
+}
+
+dependencies {
+    compile "com.vmware.xenon:xenon-common:$xenonVersion"
+    compile "com.vmware.xenon:xenon-ui:$xenonVersion"
+    compile "com.vmware.xenon:xenon-dns:$xenonVersion"
+    compile "org.apache.commons:commons-lang3:$commonsLangVersion"
+    testCompile "com.vmware.xenon:xenon-common:$xenonVersion:tests"
+    testCompile "junit:junit:$junitVersion"
+}
 
 jar {
     manifest {
@@ -13,7 +36,8 @@ jar {
     }
 }
 
-dependencies {
-    compile "com.vmware.xenon:xenon-common:$xenonVersion","com.vmware.xenon:xenon-ui:$xenonVersion","com.vmware.xenon:xenon-dns:$xenonVersion"
-    testCompile "com.vmware.xenon:xenon-common:$xenonVersion:tests"
+build.dependsOn shadowJar // Call "shadowJar" task before "build"
+
+task wrapper(type: Wrapper) {
+    gradleVersion = "2.3"
 }
