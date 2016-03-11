@@ -7,10 +7,14 @@ import com.vmware.xenon.common.*;
 import com.vmware.xenon.dns.services.DNSService;
 import com.vmware.xenon.services.common.ServiceUriPaths;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ToStringBuilder;
 
 import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Created by tcurtis on 2/24/16.
@@ -69,7 +73,7 @@ public class ReviewService extends StatefulService {
    }
 
    /** Validates initial state of a {@code Review}. Marks {@code post} as complete if successful. */
-   private void validateInitialState(Operation post) {
+   private void validateInitialState(Operation post) throws InterruptedException {
       if (!post.hasBody()) {
          throw new IllegalArgumentException("Must include non-empty body");
       }
@@ -85,89 +89,103 @@ public class ReviewService extends StatefulService {
          throw new IllegalArgumentException("productLink cannot be empty");
       }
 
-      // Here are two ways of discovering the product service from review service
+      // For example purposes, we will show two different ways for querying the product service to
+      // ensure the 'productLink' exists: 1. using node selector and 2. using DNS
+      // We will use a CountDownLatch to ensure both ways validate properly before "completing"
+      CountDownLatch latch = new CountDownLatch(2);
+      Throwable[] failure = new Throwable[1];
 
-      // 1st Way - is to query the node selector
-
+      // 1st Way - is to query the node selector via a forwarding + odata query (odata is used so
+      //           the GET doesn't block.
       String target = PRODUCT_FACTORY_LINK + String.format("?expand&$filter=(documentSelfLink eq '%s')", state.productLink);
-      Operation getProduct = Operation.createGet(this, target)
+      Operation getViaNodeSelector = Operation.createGet(this, target)
             .setReferer(this.getUri())
             .setCompletion(
                   (op, ex) -> {
-                     if (ex != null) {
-                        logSevere("Error during node selector logic: [productLink=%s] [exception=%s]", state.productLink, ex);
-                        throw new IllegalStateException("Error looking up productLink: " + state.productLink, ex);
+                     try {
+                        if (ex != null) {
+                           logSevere("Error during node selector logic: [productLink=%s] [exception=%s]", state.productLink, ex);
+                           failure[0] = ex;
+                           return;
+                        }
+
+                        ServiceDocumentQueryResult result = op.getBody(ServiceDocumentQueryResult.class);
+                        Long count = result != null ? result.documentCount : 0;
+                        logInfo("Forwarding OData query returned %d results", count);
+
+                        Map<String, Object> matchedDocuments =
+                              result == null || result.documents == null ? Collections.emptyMap() : result.documents;
+                        Object productMatch = matchedDocuments.get(state.productLink);
+                        logInfo("productMatch: %s", productMatch);
+                        if (productMatch == null) {
+                           String message = String.format("[productLink=%s] does not exist via node-selector", state.productLink);
+                           logWarning(message);
+                           failure[0] = new IllegalArgumentException(message);
+                           return;
+                        }
+
+                        Product product = Utils.fromJson(productMatch, Product.class);
+                        logInfo("Product found using node selector! [product=%s]", product);
+                     } finally { // Remember to countdown latch, regardless of error/success
+                        latch.countDown();
                      }
-
-                     ServiceDocumentQueryResult result = op.getBody(ServiceDocumentQueryResult.class);
-                     Long count = result != null ? result.documentCount : 0;
-                     logInfo("Forwarding OData query returned %d results", count);
-
-                     Map<String, Object> matchedDocuments =
-                           result == null || result.documents == null ? Collections.emptyMap() : result.documents;
-                     logInfo("result.documents: %s", matchedDocuments);
-
-                     Object productMatch = matchedDocuments.get(state.productLink);
-                     logInfo("productMatch: %s", productMatch);
-                     if (productMatch == null) {
-                        String message = String.format("[productLink=%s] does not exist", state.productLink);
-                        logWarning(message);
-                        // Ideally we want to fail here, but since we want to show the second way of querying, we will do it later
-//                        post.fail(new IllegalArgumentException(message));
-                        return;
-                     }
-
-                     logInfo("productLink found using node selector! Review is valid. Marking complete...");
-                     // Ideally we want to complete here, but since we want to show the second way of querying, we will do it later
-                     Product product = Utils.fromJson(productMatch, Product.class);
-                     logWarning("Product found! [product=%s]", product);
-//                   post.complete();
                   }
             );
-      this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getProduct);
-
+      this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getViaNodeSelector);
 
       // 2nd Way - is to query the DNS, get the host where product is running and issue a GET on that directly
-
       String productServiceDNSLookupQuery = String.format("$filter=serviceName eq %s", PRODUCT_SERVICE_NAME);
-      URI productServiceDNSLookupURI = UriUtils.buildUri(ReviewHost.hostArguments.dnshost, ReviewHost.hostArguments.dnsport, ServiceUriPaths.DNS + "/query", productServiceDNSLookupQuery);
+      URI productServiceDNSLookupURI = UriUtils.buildUri(
+            ReviewHost.hostArguments.dnshost,
+            ReviewHost.hostArguments.dnsport,
+            ServiceUriPaths.DNS + "/query",
+            productServiceDNSLookupQuery);
 
       Operation.CompletionHandler productLookupHandler = (op, ex) -> {
-         if(ex != null) {
-            String message = String.format("[productLink=%s] does not exist", state.productLink);
-            logSevere(message);
-            post.fail(new IllegalArgumentException(message));
-            return;
-         }
+         try {
+            if (ex != null) {
+               String message = String.format("[productLink=%s] does not exist when using GET provided by DNS lookup", state.productLink);
+               logInfo(message);
+               failure[0] = new IllegalArgumentException(message);
+               return;
+            }
 
-         logInfo("productLink found using DNS lookup! Review is valid. Marking complete...");
-         post.complete();
+            Product product = op.getBody(Product.class);
+            logInfo("Product found using DNS! [product=%s]", product);
+         } finally { // Remember to countdown latch, regardless of error/success
+            latch.countDown();
+         }
       };
 
       Operation.CompletionHandler productServiceDNSLookupQueryHandler = (o, e) -> {
          if(e != null) {
-            logSevere("Error during product service DNS lookup: [ProductLink=%s], [Exception=%s]", state.productLink, e);
-            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
+            logSevere("Error looking up DNS for product service: [Exception=%s]", e);
+            throw new IllegalStateException("Error looking up DNS for product service", e);
          }
+
          ServiceDocumentQueryResult result = o.getBody(ServiceDocumentQueryResult.class);
-
          if(result.documentLinks == null || result.documentLinks.size() != 1) {
-            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [ProductLink=%s], [Exception=%s]", state.productLink, e);
+            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [productLink=%s] [documentLinks=%s] [Exception=%s]",
+                  state.productLink, result.documentLinks);
             throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
          }
 
-         DNSService.DNSServiceState serviceState =
-               Utils.fromJson((String) result.documents.get(result.documentLinks.get(0)),
-                     DNSService.DNSServiceState.class);
+         String documentKey = result.documentLinks.get(0);
+         logInfo("DNS service lookup returned %d record with [documentKey=%s]", result.documentCount, documentKey);
+         Object documentValue = result.documents.get(documentKey);
+         DNSService.DNSServiceState serviceState = Utils.fromJson(documentValue, DNSService.DNSServiceState.class);
+         logInfo("Retrieved [dnsServiceState=%s]", ToStringBuilder.reflectionToString(serviceState));
 
          if(serviceState.nodeReferences.size() > 0) {
             URI productURI = UriUtils.extendUri(serviceState.nodeReferences.iterator().next(), state.productLink);
-            logInfo("Product URI = [%s]", productURI);
+            logInfo("DNS Result: Product URI = [%s]", productURI);
 
+            // Add "no queuing" directive because, by default, it will wait on the service for it to be created
+            // NO_QUEUING says return immediately, even if the service doesn't exist yet (a HTTP 404)
             Operation getProductDirect = Operation.createGet(productURI)
+                  .setReferer(this.getUri())
                   .addPragmaDirective(Operation.PRAGMA_DIRECTIVE_NO_QUEUING)
                   .setCompletion(productLookupHandler);
-            getProductDirect.setReferer(this.getUri());
             this.getHost().sendRequest(getProductDirect);
          } else {
             logSevere("Error during product service DNS lookup: No Nodes found [ProductLink=%s], [Exception=%s]", state.productLink, e);
@@ -180,6 +198,19 @@ public class ReviewService extends StatefulService {
             .setReferer(this.getUri());
 
       this.getHost().sendRequest(getProductNodeFromDNS);
+
+      // Wait on latch to ensure both methods of communicating with ProductService was successful
+      if (!latch.await(getHost().getState().operationTimeoutMicros, TimeUnit.MICROSECONDS)) {
+         failure[0] = new TimeoutException();
+      }
+
+      if (failure[0] != null) {
+         post.fail(failure[0]);
+         return;
+      }
+
+      post.complete();
+      logInfo("Review created successfully! [review=%s]", post.getBody(Review.class));
    }
 
    @Override
