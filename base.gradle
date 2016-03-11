@@ -6,7 +6,7 @@ group = 'com.tcurt628.smartshop'
 ext {
     commonsLangVersion = "3.4"
     junitVersion = "4.12"
-    xenonVersion = "0.7.0"
+    xenonVersion = "0.7.1"
 }
 
 apply plugin: 'maven'
