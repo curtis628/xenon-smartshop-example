@@ -1,5 +1,6 @@
 package com.tcurt628.smartshop.review;
 
+import com.tcurt628.smartshop.product.model.Product;
 import com.tcurt628.smartshop.review.model.Review;
 import com.tcurt628.smartshop.review.model.ReviewUpdateRequest;
 import com.vmware.xenon.common.*;
@@ -118,6 +119,8 @@ public class ReviewService extends StatefulService {
 
                      logInfo("productLink found using node selector! Review is valid. Marking complete...");
                      // Ideally we want to complete here, but since we want to show the second way of querying, we will do it later
+                     Product product = Utils.fromJson(productMatch, Product.class);
+                     logWarning("Product found! [product=%s]", product);
 //                   post.complete();
                   }
             );
