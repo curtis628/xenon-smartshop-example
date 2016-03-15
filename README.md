@@ -26,7 +26,7 @@ $ ./gradlew build && java -jar build/libs/dns-service-1.0.0-all.jar --port=8002 
 To build and run `product-app`, run:
 ```bash
 cd product-app
-./gradlew build install && java -jar service/build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=service/build/tmp/xenon
+./gradlew build install && java -jar service/build/libs/product-service-1.0.0-all.jar --port=8000 --id=productHost-8000 --sandbox=service/build/tmp/xenon --dnshost=localhost --dnsport=8002 --peerNodes=http://127.0.0.1:8000,http://127.0.0.1:8001
 ```
 
 > The above builds `product-app` with gradle, and runs a single, standalone Xenon host located at port 8000 (with the id of `productHost-8000`). To get a fresh Xenon host instance (with no previous persisted state), replace the `gradle build` portion of the command above with `gradle clean build`.
@@ -37,7 +37,7 @@ Similarly (in a separate command window), to build and run `review-app` on port 
 
 ```bash
 cd review-service
-./gradlew build && java -jar service/build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=service/build/tmp/xenon
+./gradlew build && java -jar service/build/libs/review-service-1.0.0-all.jar --port=8001 --id=reviewHost-8001 --sandbox=service/build/tmp/xenon --dnshost=localhost --dnsport=8002
 ```
 
 ## Brief introduction to the services (Domain Model)
