@@ -1,7 +1,10 @@
 package com.tcurt628.smartshop.product;
 
 import com.tcurt628.smartshop.product.model.Product;
-import com.vmware.xenon.common.*;
+import com.vmware.xenon.common.FactoryService;
+import com.vmware.xenon.common.Operation;
+import com.vmware.xenon.common.Service;
+import com.vmware.xenon.common.StatefulService;
 import org.apache.commons.lang3.StringUtils;
 
 /**

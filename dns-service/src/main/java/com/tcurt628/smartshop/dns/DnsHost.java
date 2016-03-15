@@ -1,6 +1,8 @@
 package com.tcurt628.smartshop.dns;
 
-import com.vmware.xenon.common.*;
+import com.vmware.xenon.common.Operation;
+import com.vmware.xenon.common.ServiceHost;
+import com.vmware.xenon.common.UriUtils;
 import com.vmware.xenon.dns.services.DNSServices;
 import com.vmware.xenon.services.common.RootNamespaceService;
 import com.vmware.xenon.ui.UiService;

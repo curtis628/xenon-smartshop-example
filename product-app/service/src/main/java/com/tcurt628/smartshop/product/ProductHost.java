@@ -1,17 +1,29 @@
 package com.tcurt628.smartshop.product;
 
-import com.vmware.xenon.common.*;
+import com.vmware.xenon.common.CommandLineArgumentParser;
+import com.vmware.xenon.common.NodeSelectorService;
+import com.vmware.xenon.common.NodeSelectorState;
+import com.vmware.xenon.common.Operation;
+import com.vmware.xenon.common.OperationJoin;
+import com.vmware.xenon.common.OperationSequence;
+import com.vmware.xenon.common.Service;
+import com.vmware.xenon.common.ServiceHost;
+import com.vmware.xenon.common.UriUtils;
 import com.vmware.xenon.dns.services.DNSFactoryService;
 import com.vmware.xenon.services.common.ConsistentHashingNodeSelectorService;
 import com.vmware.xenon.services.common.NodeGroupFactoryService;
+import com.vmware.xenon.services.common.NodeGroupService;
 import com.vmware.xenon.services.common.RootNamespaceService;
 import com.vmware.xenon.services.common.ServiceUriPaths;
 
 import java.net.URI;
-import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 
 /**
