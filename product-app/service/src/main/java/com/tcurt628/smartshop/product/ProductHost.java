@@ -37,9 +37,16 @@ public class ProductHost extends ServiceHost {
    public static final String PRODUCT_NODE_GROUP_URI = ServiceUriPaths.NODE_GROUP_FACTORY + "/" + PRODUCT_NODE_GROUP_NAME;
    public static final String PRODUCT_NODE_SELECTOR_URI = ServiceUriPaths.NODE_SELECTOR_PREFIX + "/" + PRODUCT_NODE_SELECTOR_NAME;
 
+   /** The key to the map is the node selector URI; and the value is the node group URI */
+   private static Map<String, String> NODE_GROUP_TO_SELECTORS_MAP = new HashMap<>();
+   static {
+      NODE_GROUP_TO_SELECTORS_MAP.put(PRODUCT_NODE_SELECTOR_URI, PRODUCT_NODE_GROUP_URI);
+   }
+
    public static class Arguments {
       public String dnshost;
       public int dnsport;
+      public int initialNodes = 1;
    }
 
    public static Arguments hostArguments = new Arguments();
@@ -73,11 +80,8 @@ public class ProductHost extends ServiceHost {
 
       this.log(Level.FINE, "Default core services started!");
 
-      // The key to the map is the node group URI; and the value is the node group selector URI
-      Map<String, String> nodeGroupToSelectorMap = new HashMap<>();
-      nodeGroupToSelectorMap.put(PRODUCT_NODE_GROUP_URI, PRODUCT_NODE_SELECTOR_URI);
-      createNodeGroups(nodeGroupToSelectorMap.keySet());
-      createNodeSelectors(nodeGroupToSelectorMap);
+      // Create custom node groups and selectors
+      createNodeGroupsAndSelectors(NODE_GROUP_TO_SELECTORS_MAP);
 
       // start our service
       super.startService(
@@ -110,130 +114,77 @@ public class ProductHost extends ServiceHost {
    //
    // TODO Extract all code below here to the base ServiceHost class.
    //
-   private void createNodeGroups(Set<String> nodeGroupUris) throws Throwable {
-      if (nodeGroupUris == null || nodeGroupUris.size() == 0) {
-         throw new IllegalArgumentException("Must provide at least one node group URI");
-      }
-
-      Collection<Operation> nodeGroupOperations = new ArrayList<>(nodeGroupUris.size());
-      for (String nodeGroupUri : nodeGroupUris) {
-         nodeGroupOperations.add(NodeGroupFactoryService
-               .createNodeGroupPostOp(this, nodeGroupUri)
-               .setReferer(UriUtils.buildUri(this, "")));
-      }
-
-      sendOperationsSynchronously(nodeGroupOperations);
-      this.log(Level.INFO, "Created node groups successfully: %s", nodeGroupUris);
-   }
-
-   private void createNodeSelectors(Map<String, String> nodeGroupToSelectorMap) throws Throwable {
-      if (nodeGroupToSelectorMap == null || nodeGroupToSelectorMap.size() == 0) {
+   private void createNodeGroupsAndSelectors(Map<String, String> nodeSelectorToNodeGroupMap) throws Throwable {
+      if (nodeSelectorToNodeGroupMap == null || nodeSelectorToNodeGroupMap.size() == 0) {
          throw new IllegalArgumentException("Must provide a map with at least one node group to node selector entry");
       }
 
-      List<Operation> nodeSelectorPosts = new ArrayList<>(nodeGroupToSelectorMap.size());
-      List<Service> nodeSelectorServices = new ArrayList<>(nodeGroupToSelectorMap.size());
-      for (String nodeGroup : nodeGroupToSelectorMap.keySet()) {
-         String nodeSelectorUri = nodeGroupToSelectorMap.get(nodeGroup);
+      Set<String> nodeGroupUris = new HashSet<>(nodeSelectorToNodeGroupMap.values());
+      log(Level.INFO, "Creating node groups: %s", nodeGroupUris);
 
-         Operation postNodeSelector = Operation.createPost(
-               UriUtils.buildUri(this, nodeSelectorUri))
-               .setReferer(UriUtils.buildUri(this, ""));
+      Collection<Operation> createNodeGroups = new ArrayList<>(nodeGroupUris.size());
+      Collection<Operation> patchQuorums = new ArrayList<>(nodeGroupUris.size());
+      List<Operation> createNodeSelectors = new ArrayList<>(nodeSelectorToNodeGroupMap.size());
+      List<Service> createNodeSelectorServices = new ArrayList<>(nodeSelectorToNodeGroupMap.size());
+      for (String nodeGroupSelector : nodeSelectorToNodeGroupMap.keySet()) {
+         String nodeGroup = nodeSelectorToNodeGroupMap.get(nodeGroupSelector);
+         Operation postNewNodeGroup = createNewNodeGroupOperation(nodeGroup);
+         createNodeGroups.add(postNewNodeGroup);
+
+         Operation patchUpdateQuorum = createQuorumRequestOperation(nodeGroup);
+         patchQuorums.add(patchUpdateQuorum);
 
          NodeSelectorService nodeSelectorService = new ConsistentHashingNodeSelectorService();
          NodeSelectorState nodeSelectorState = new NodeSelectorState();
          nodeSelectorState.nodeGroupLink = nodeGroup;
+
+         Operation postNodeSelector = Operation.createPost(
+               UriUtils.buildUri(this, nodeGroupSelector))
+               .setReferer(UriUtils.buildUri(this, ""));
          postNodeSelector.setBody(nodeSelectorState);
-
-         nodeSelectorPosts.add(postNodeSelector);
-         nodeSelectorServices.add(nodeSelectorService);
+         createNodeSelectors.add(postNodeSelector);
+         createNodeSelectorServices.add(nodeSelectorService);
       }
 
-      startServicesSynchronously(nodeSelectorPosts, nodeSelectorServices);
-      this.log(Level.INFO, "Created node selectors successfully: %s", nodeGroupToSelectorMap.values());
+      OperationJoin nodeGroupOperations = OperationJoin.create(createNodeGroups);
+      OperationJoin quorumOperations = OperationJoin.create(patchQuorums);
+
+      OperationSequence.create(nodeGroupOperations, quorumOperations)
+            .setCompletion( (ops,failures) -> {
+               if (failures != null && !failures.isEmpty()) {
+                  log(Level.SEVERE, "Error when creating node groups/selectors: %s. [ops.values=%s] [failures.values=%s]",
+                        nodeGroupUris, ops.values(), failures.values());
+                  throw new IllegalStateException("Error when creating node groups/selectors", failures.values().iterator().next());
+               }
+
+               log(Level.INFO, "Successfully created node-groups: %s", nodeGroupUris);
+               log(Level.FINE, "Completed %d operations: %s", ops.size(), ops.values());
+               for (int ndx=0; ndx < createNodeSelectors.size(); ndx++) {
+                  Operation nodeSelectorPost = createNodeSelectors.get(ndx);
+                  Service nodeSelectorService = createNodeSelectorServices.get(ndx);
+                  startService(nodeSelectorPost, nodeSelectorService);
+                  log(Level.FINE, "Started [nodeSelector=%s]", nodeSelectorPost.getUri());
+               }
+            })
+            .sendWith(this);
+      this.log(Level.FINE, "Sent requests to create node groups: %s", nodeGroupUris);
    }
 
-   protected void startServicesSynchronously(List<Operation> startPosts,
-         List<Service> services)
-         throws Throwable {
-      CountDownLatch l = new CountDownLatch(services.size());
-      Throwable[] failure = new Throwable[1];
-      StringBuilder sb = new StringBuilder();
-
-      Operation.CompletionHandler h = (o, e) -> {
-         try {
-            if (e != null) {
-               failure[0] = e;
-               log(Level.SEVERE, "Service %s failed start: %s", o.getUri(), e);
-               return;
-            }
-
-            log(Level.FINE, "started %s", o.getUri().getPath());
-         } finally {
-            l.countDown();
-         }
-      };
-      int index = 0;
-
-
-      for (Service s : services) {
-         Operation startPost = startPosts.get(index++);
-         startPost.setCompletion(h);
-         sb.append(startPost.getUri().toString()).append(Operation.CR_LF);
-         log(Level.FINE, "starting %s", startPost.getUri());
-         startService(startPost, s);
-      }
-
-      if (!l.await(this.getState().operationTimeoutMicros, TimeUnit.MICROSECONDS)) {
-         log(Level.SEVERE, "One of the core services failed start: %s",
-               sb.toString(),
-               new TimeoutException());
-      }
-
-      if (failure[0] != null) {
-         throw failure[0];
-      }
+   private Operation createNewNodeGroupOperation(String nodeGroup) {
+      Operation postNewNodeGroup = NodeGroupFactoryService
+            .createNodeGroupPostOp(this, nodeGroup)
+            .setReferer(getUri());
+      return postNewNodeGroup;
    }
 
-   private void sendOperationsSynchronously(Collection<Operation> operations) throws Throwable {
-      if (operations == null || operations.size() == 0) {
-         throw new IllegalArgumentException("Must provide at least one operation");
-      }
-      log(Level.FINE, "sendOperationsSynchronously(). [operations=%s]", operations);
-
-      Throwable[] error = new Throwable[1];
-      CountDownLatch c = new CountDownLatch(operations.size());
-      Operation.CompletionHandler comp = (o, e) -> {
-         this.log(Level.FINE, "Completion handler running: [o=%s] [e=%s]", o, e);
-
-         if (e != null) {
-            error[0] = e;
-            log(Level.SEVERE, "Error executing operation in sequence. [op=%s] [error=%s]", o, e);
-            stop();
-            c.countDown();
-            return;
-         }
-         log(Level.FINE, "POST successful to: %s", o.getUri().getPath());
-         c.countDown();
-      };
-
-      for (Operation operation : operations) {
-         operation.setCompletion(comp);
-      }
-
-      OperationSequence parallelSequence = OperationSequence.create(operations.toArray(new Operation[0]));
-
-      log(Level.FINE, "Sending sequence...");
-      parallelSequence.sendWith(this);
-
-      if (!c.await(getState().operationTimeoutMicros, TimeUnit.MICROSECONDS)) {
-         throw new TimeoutException();
-      }
-      if (error[0] != null) {
-         throw error[0];
-      }
-
-      log(Level.FINE, "Successfully processed %d operations", operations.size());
+   private Operation createQuorumRequestOperation(String nodeGroup) {
+      NodeGroupService.UpdateQuorumRequest quorumRequest = NodeGroupService.UpdateQuorumRequest.create(true);
+      quorumRequest.setMembershipQuorum(hostArguments.initialNodes);
+      URI nodeGroupUri = UriUtils.buildUri(this, nodeGroup);
+      Operation patchUpdateQuorum = Operation.createPatch(nodeGroupUri)
+            .setBody(quorumRequest)
+            .setReferer(getUri());
+      return patchUpdateQuorum;
    }
 
 }
