@@ -30,7 +30,6 @@ public class ReviewService extends StatefulService {
    public static final Integer MAX_STAR = 5;
 
    public static final String FACTORY_LINK = "/reviews";
-   public static final String PRODUCT_SERVICE_NAME = "ProductService";
    public static final String PRODUCT_FACTORY_LINK = "/products";
 
    /** Not crazy about this, but it works for now I guess... */
@@ -145,7 +144,7 @@ public class ReviewService extends StatefulService {
       this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getViaNodeSelector);
 
       // 2nd Way - is to query the DNS, get the host where product is running and issue a GET on that directly
-      String productServiceDNSLookupQuery = String.format("$filter=serviceName eq %s", PRODUCT_SERVICE_NAME);
+      String productServiceDNSLookupQuery = String.format("$filter=serviceLink eq '%s'", PRODUCT_FACTORY_LINK);
       URI productServiceDNSLookupURI = UriUtils.buildUri(
             ReviewHost.hostArguments.dnshost,
             ReviewHost.hostArguments.dnsport,
