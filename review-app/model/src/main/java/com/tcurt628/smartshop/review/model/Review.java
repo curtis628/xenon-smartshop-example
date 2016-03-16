@@ -13,7 +13,7 @@ public class Review extends ServiceDocument {
 
    @Override
    public String toString() {
-      return String.format("ReviewServiceState: [productLink=%s] [author=%s] [content=%s] [stars=%d]",
+      return String.format("Review: [productLink=%s] [author=%s] [content=%s] [stars=%d]",
             productLink, author, content, stars);
    }
 }

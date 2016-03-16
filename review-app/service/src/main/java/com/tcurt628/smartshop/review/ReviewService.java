@@ -21,10 +21,9 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-/**
- * Created by tcurtis on 2/24/16.
- */
 public class ReviewService extends StatefulService {
 
    public static final Integer MIN_STAR = 1;
@@ -34,9 +33,13 @@ public class ReviewService extends StatefulService {
    public static final String PRODUCT_SERVICE_NAME = "ProductService";
    public static final String PRODUCT_FACTORY_LINK = "/products";
 
-   /**
-    * Create a default factory service that starts instances of this service on POST.
-    */
+   /** Not crazy about this, but it works for now I guess... */
+   private static Logger logger = Logger.getLogger(ReviewService.class.getName());
+   static {
+      logger.setLevel(Level.FINE);
+   }
+
+   /** Create a default factory service that starts instances of this service on POST. */
    public static Service createFactory() {
       return FactoryService.create(ReviewService.class, Review.class);
    }
@@ -54,7 +57,7 @@ public class ReviewService extends StatefulService {
          // validateInitialState handles marking 'post' as complete or fail
          validateInitialState(post);
       } catch (Exception e) {
-         logWarning("Error on handleStart for: %s", post);
+         logWarning("Error on handleStart. [post=%s] [exception=%s]", post, e.getMessage());
          post.fail(e);
       }
    }
@@ -85,7 +88,7 @@ public class ReviewService extends StatefulService {
       }
 
       Review state = post.getBody(Review.class);
-      logWarning("Processing state: %s", state);
+      logInfo("Validating review: %s", state);
 
       validateStars(state.stars);
       validateContent(state.content);
@@ -115,14 +118,15 @@ public class ReviewService extends StatefulService {
                            return;
                         }
 
+                        logFine("Successfully processed operation: %s", op);
                         ServiceDocumentQueryResult result = op.getBody(ServiceDocumentQueryResult.class);
                         Long count = result != null ? result.documentCount : 0;
-                        logInfo("Forwarding OData query returned %d results", count);
 
                         Map<String, Object> matchedDocuments =
                               result == null || result.documents == null ? Collections.emptyMap() : result.documents;
                         Object productMatch = matchedDocuments.get(state.productLink);
-                        logInfo("productMatch: %s", productMatch);
+                        logFine("Forwarding OData query returned %d results. Matching product details: %s",
+                              count, productMatch);
                         if (productMatch == null) {
                            String message = String.format("[productLink=%s] does not exist via node-selector", state.productLink);
                            logWarning(message);
@@ -131,12 +135,13 @@ public class ReviewService extends StatefulService {
                         }
 
                         Product product = Utils.fromJson(productMatch, Product.class);
-                        logInfo("Product found using node selector! [product=%s]", product);
+                        logInfo("Product found using node selector! %s", product);
                      } finally { // Remember to countdown latch, regardless of error/success
                         latch.countDown();
                      }
                   }
             );
+      logInfo("Forwarding odata GET query for: %s", getViaNodeSelector.getUri());
       this.getHost().forwardRequest(ReviewHost.PRODUCT_NODE_SELECTOR_URI, getViaNodeSelector);
 
       // 2nd Way - is to query the DNS, get the host where product is running and issue a GET on that directly
@@ -157,7 +162,7 @@ public class ReviewService extends StatefulService {
             }
 
             Product product = op.getBody(Product.class);
-            logInfo("Product found using DNS! [product=%s]", product);
+            logInfo("Product found using DNS! %s", product);
          } finally { // Remember to countdown latch, regardless of error/success
             latch.countDown();
          }
@@ -171,7 +176,7 @@ public class ReviewService extends StatefulService {
 
          ServiceDocumentQueryResult result = o.getBody(ServiceDocumentQueryResult.class);
          if(result.documentLinks == null || result.documentLinks.size() != 1) {
-            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [productLink=%s] [documentLinks=%s] [Exception=%s]",
+            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [productLink=%s] [documentLinks=%s]",
                   state.productLink, result.documentLinks);
             throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
          }
@@ -180,11 +185,11 @@ public class ReviewService extends StatefulService {
          logInfo("DNS service lookup returned %d record with [documentKey=%s]", result.documentCount, documentKey);
          Object documentValue = result.documents.get(documentKey);
          DNSService.DNSServiceState serviceState = Utils.fromJson(documentValue, DNSService.DNSServiceState.class);
-         logInfo("Retrieved [dnsServiceState=%s]", ToStringBuilder.reflectionToString(serviceState));
+         logFine("Retrieved [dnsServiceState=%s]", ToStringBuilder.reflectionToString(serviceState));
 
          if(serviceState.nodeReferences.size() > 0) {
             URI productURI = UriUtils.extendUri(serviceState.nodeReferences.iterator().next(), state.productLink);
-            logInfo("DNS Result: Product URI = [%s]", productURI);
+            logInfo("DNS Response for product: %s", productURI);
 
             // Add "no queuing" directive because, by default, it will wait on the service for it to be created
             // NO_QUEUING says return immediately, even if the service doesn't exist yet (a HTTP 404)
@@ -203,6 +208,7 @@ public class ReviewService extends StatefulService {
             .setCompletion(productServiceDNSLookupQueryHandler)
             .setReferer(this.getUri());
 
+      logInfo("Sending DNS request: %s", getProductNodeFromDNS.getUri());
       this.getHost().sendRequest(getProductNodeFromDNS);
 
       // Wait on latch to ensure both methods of communicating with ProductService was successful

@@ -7,16 +7,20 @@ import com.vmware.xenon.common.Service;
 import com.vmware.xenon.common.StatefulService;
 import org.apache.commons.lang3.StringUtils;
 
-/**
- * Created by tcurtis on 2/24/16.
- */
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 public class ProductService extends StatefulService {
 
    public static final String FACTORY_LINK = "/products";
 
-   /**
-    * Create a default factory service that starts instances of this service on POST.
-    */
+   /** Not crazy about this, but it works for now I guess... */
+   private static Logger logger = Logger.getLogger(ProductService.class.getName());
+   static {
+      logger.setLevel(Level.FINE);
+   }
+
+   /** Create a default factory service that starts instances of this service on POST. */
    public static Service createFactory() {
       return FactoryService.create(ProductService.class, Product.class);
    }
@@ -33,7 +37,7 @@ public class ProductService extends StatefulService {
       try {
          validateState(post);
          post.complete();
-         logInfo("handleStart() completed successfully. [post=%s]", post);
+         logFine("handleStart() completed successfully. [post=%s]", post);
       } catch (Exception e) {
          logWarning("handleStart() FAILED! [post: %s] [error: %s]", post, e);
          post.fail(e);
@@ -46,6 +50,7 @@ public class ProductService extends StatefulService {
       }
 
       Product state = post.getBody(Product.class);
+      logFine("Validating product: %s", state);
       if (StringUtils.isEmpty(state.name)) {
          throw new IllegalArgumentException("Name cannot be empty");
       }
@@ -53,11 +58,12 @@ public class ProductService extends StatefulService {
       if (state.price < 0) {
          throw new IllegalArgumentException("Price cannot be negative");
       }
+
+      logInfo("Product valid: %s", state);
    }
 
    @Override
    public void handlePut(Operation put) {
-      logFine("handlePut(). [put=%s]", put);
       Product currentState = getState(put);
       validateState(put);
 
@@ -67,5 +73,6 @@ public class ProductService extends StatefulService {
       Product body = put.getBody(Product.class);
       put.setBody(body);
       put.complete();
+      logFine("handlePut() completed successfully. [put=%s]", put);
    }
 }
