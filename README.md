@@ -59,7 +59,7 @@ Below are some helpful REST calls for interacting with the distributed applicati
 
 ### product-service API calls
 
-NOTE: The `product` node group and selector is created on startup by [ProductHost.java](./product-service/src/main/java/com/tcurt628/smartshop/product/ProductHost.java#L40)
+NOTE: The `product` node group and selector is created on startup by [ProductHost.java](./product-app/service/src/main/java/com/tcurt628/smartshop/product/ProductHost.java#L50)
 
 * `GET` all node groups: `http://localhost:8000/core/node-groups`
 * `GET` `product` node group: `http://localhost:8000/core/node-groups/product`
@@ -156,12 +156,13 @@ NOTE: The `product` node group and selector is created on startup by [ProductHos
 
 ### review-service API calls
 
-NOTE: The `review` node group and selector is created on startup by [ReviewHost.java](review-service/src/main/java/com/tcurt628/smartshop/review/ReviewHost.java#L41)
+NOTE: The `review` node group and selector is created on startup by [ReviewHost.java](./review-app/service/src/main/java/com/tcurt628/smartshop/review/ReviewHost.java#L50). On startup, it also automatically fires off a [task](./review-app/service/src/main/java/com/tcurt628/smartshop/review/JoinProductNodeGroupTaskService.java.java) that dynamically finds a host running `/products` (using `dns-service`) and then joins it as an OBSERVER.
 
 * `GET` all node groups: `http://localhost:8001/core/node-groups`
 * `GET` `product` node group: `http://localhost:8001/core/node-groups/product`
 * `GET` `product` node selector: `http://localhost:8001/core/node-selectors/product`
 * `POST` to join `productHost-8000`'s `product` node group as a [OBSERVER](https://github.com/vmware/xenon/wiki/NodeGroupService#node-options)
+  * NOTE: You no longer have to manually execute this `join`, thanks to [JoinProductNodeGroupTaskService.java](./review-app/service/src/main/java/com/tcurt628/smartshop/review/JoinProductNodeGroupTaskService.java.java)
 ```json
 {
     "kind": "com:vmware:xenon:services:common:NodeGroupService:JoinPeerRequest",
@@ -186,5 +187,5 @@ NOTE: The `review` node group and selector is created on startup by [ReviewHost.
   "productLink": "/products/ffebe3b1-31f0-4046-aea4-e8919bc87ce3"
 }`
 ```
-The above tries to create a new `Review`. And it also validates the `productLink` via two ways
+The above tries to create a new `Review`. And it also validates the `productLink` via two ways: via a forwarding+odata query using the `product` node selector, and via DNS.
 
