@@ -1,10 +1,11 @@
 plugins {
     id 'java'
+    id 'maven'
     id 'idea'
     id 'com.github.johnrengelman.shadow' version '1.2.3' // builds fat jar with 'shadowJar' task
 }
 
-group = 'com.tcurt628.smartshop.product'
+group = 'com.tcurt628.smartshop.dns'
 version = '1.0.0'
 
 sourceCompatibility = 1.8

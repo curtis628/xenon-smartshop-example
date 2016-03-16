@@ -24,6 +24,7 @@ subprojects {
         commonsLangVersion = "3.4"
         junitVersion = "4.12"
         xenonVersion = "0.7.1"
+        smartshopDnsVersion = "1.0.0"
         smartshopProductVersion = "1.0.0"
     }
 

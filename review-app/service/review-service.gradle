@@ -13,5 +13,6 @@ jar {
 dependencies {
     compile project(':review-model')
     compile "com.vmware.xenon:xenon-dns:$xenonVersion"
+    compile "com.tcurt628.smartshop.dns:dns-service:$smartshopDnsVersion"
     compile "com.tcurt628.smartshop.product:product-model:$smartshopProductVersion"
 }

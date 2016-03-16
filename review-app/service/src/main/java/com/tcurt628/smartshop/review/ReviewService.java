@@ -1,5 +1,6 @@
 package com.tcurt628.smartshop.review;
 
+import com.tcurt628.smartshop.dns.SmartShopDnsQueries;
 import com.tcurt628.smartshop.product.model.Product;
 import com.tcurt628.smartshop.review.model.Review;
 import com.tcurt628.smartshop.review.model.ReviewUpdateRequest;
@@ -32,6 +33,8 @@ public class ReviewService extends StatefulService {
    public static final String FACTORY_LINK = "/reviews";
    public static final String PRODUCT_FACTORY_LINK = "/products";
 
+   private static SmartShopDnsQueries dnsQueries = null;
+
    /** Not crazy about this, but it works for now I guess... */
    private static Logger logger = Logger.getLogger(ReviewService.class.getName());
    static {
@@ -48,6 +51,11 @@ public class ReviewService extends StatefulService {
       super.toggleOption(ServiceOption.PERSISTENCE, true);
       super.toggleOption(ServiceOption.REPLICATION, true);
       super.setPeerNodeSelectorPath(ReviewHost.REVIEW_NODE_SELECTOR_URI);
+
+      if (dnsQueries == null) {
+         ReviewHost host = (ReviewHost) getHost();
+         dnsQueries = new SmartShopDnsQueries(host.hostArguments.dnshost, host.hostArguments.dnsport);
+      }
    }
 
    @Override
@@ -112,7 +120,8 @@ public class ReviewService extends StatefulService {
                   (op, ex) -> {
                      try {
                         if (ex != null) {
-                           logSevere("Error during node selector logic: [productLink=%s] [exception=%s]", state.productLink, ex);
+                           logSevere("Error during node selector logic: [productLink=%s] [exception=%s]. Is this host joined to the product node group as an OBSERVER?"
+                                 , state.productLink, ex);
                            failure[0] = ex;
                            return;
                         }
@@ -124,7 +133,7 @@ public class ReviewService extends StatefulService {
                         Map<String, Object> matchedDocuments =
                               result == null || result.documents == null ? Collections.emptyMap() : result.documents;
                         Object productMatch = matchedDocuments.get(state.productLink);
-                        logFine("Forwarding OData query returned %d results. Matching product details: %s",
+                        logFine("Forwarding OData query returned %d results. Matching document: %s",
                               count, productMatch);
                         if (productMatch == null) {
                            String message = String.format("[productLink=%s] does not exist via node-selector", state.productLink);
@@ -145,12 +154,6 @@ public class ReviewService extends StatefulService {
 
       // 2nd Way - is to query the DNS, get the host where product is running and issue a GET on that directly
       String productServiceDNSLookupQuery = String.format("$filter=serviceLink eq '%s'", PRODUCT_FACTORY_LINK);
-      URI productServiceDNSLookupURI = UriUtils.buildUri(
-            ReviewHost.hostArguments.dnshost,
-            ReviewHost.hostArguments.dnsport,
-            ServiceUriPaths.DNS + "/query",
-            productServiceDNSLookupQuery);
-
       Operation.CompletionHandler productLookupHandler = (op, ex) -> {
          try {
             if (ex != null) {
@@ -167,48 +170,7 @@ public class ReviewService extends StatefulService {
          }
       };
 
-      Operation.CompletionHandler productServiceDNSLookupQueryHandler = (o, e) -> {
-         if(e != null) {
-            logSevere("Error looking up DNS for product service: [Exception=%s]", e);
-            throw new IllegalStateException("Error looking up DNS for product service", e);
-         }
-
-         ServiceDocumentQueryResult result = o.getBody(ServiceDocumentQueryResult.class);
-         if(result.documentLinks == null || result.documentLinks.size() != 1) {
-            logSevere("Error during product service DNS lookup: DocumentLinks is wrong [productLink=%s] [documentLinks=%s]",
-                  state.productLink, result.documentLinks);
-            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
-         }
-
-         String documentKey = result.documentLinks.get(0);
-         logInfo("DNS service lookup returned %d record with [documentKey=%s]", result.documentCount, documentKey);
-         Object documentValue = result.documents.get(documentKey);
-         DNSService.DNSServiceState serviceState = Utils.fromJson(documentValue, DNSService.DNSServiceState.class);
-         logFine("Retrieved [dnsServiceState=%s]", ToStringBuilder.reflectionToString(serviceState));
-
-         if(serviceState.nodeReferences.size() > 0) {
-            URI productURI = UriUtils.extendUri(serviceState.nodeReferences.iterator().next(), state.productLink);
-            logInfo("DNS Response for product: %s", productURI);
-
-            // Add "no queuing" directive because, by default, it will wait on the service for it to be created
-            // NO_QUEUING says return immediately, even if the service doesn't exist yet (a HTTP 404)
-            Operation getProductDirect = Operation.createGet(productURI)
-                  .setReferer(this.getUri())
-                  .addPragmaDirective(Operation.PRAGMA_DIRECTIVE_NO_QUEUING)
-                  .setCompletion(productLookupHandler);
-            this.getHost().sendRequest(getProductDirect);
-         } else {
-            logSevere("Error during product service DNS lookup: No Nodes found [ProductLink=%s], [Exception=%s]", state.productLink, e);
-            throw new IllegalStateException("Error looking up DNS for product service: " + state.productLink, e);
-         }
-      };
-
-      Operation getProductNodeFromDNS = Operation.createGet(productServiceDNSLookupURI)
-            .setCompletion(productServiceDNSLookupQueryHandler)
-            .setReferer(this.getUri());
-
-      logInfo("Sending DNS request: %s", getProductNodeFromDNS.getUri());
-      this.getHost().sendRequest(getProductNodeFromDNS);
+      dnsQueries.queryDns(productServiceDNSLookupQuery, state.productLink, getHost(), productLookupHandler);
 
       // Wait on latch to ensure both methods of communicating with ProductService was successful
       if (!latch.await(getHost().getState().operationTimeoutMicros, TimeUnit.MICROSECONDS)) {
