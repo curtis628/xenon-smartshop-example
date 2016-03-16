@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 
+import static com.tcurt628.smartshop.review.JoinProductNodeGroupTaskService.JoinProductNodeGroupTaskServiceState;
+
 /**
  * Our entry point, spawning a host that run/showcase examples we can play with.
  */
@@ -81,6 +83,13 @@ public class ReviewHost extends ServiceHost {
 
       this.log(Level.FINE, "Default core services started!");
 
+      // start our task service factory
+      URI joinProductFactoryUri = UriUtils.buildFactoryUri(this, JoinProductNodeGroupTaskService.class);
+      log(Level.INFO, "joinProductFactoryUri = %s", joinProductFactoryUri);
+      super.startService(
+            Operation.createPost(joinProductFactoryUri),
+            JoinProductNodeGroupTaskService.createFactory());
+
       // Create custom node groups and selectors
       createNodeGroupsAndSelectors(NODE_GROUP_TO_SELECTORS_MAP);
 
@@ -91,6 +100,20 @@ public class ReviewHost extends ServiceHost {
 
       // Regiser our service with DNS
       registerWithDNS();
+
+      // Kick off a task service instance...
+      JoinProductNodeGroupTaskServiceState joinTaskState = new JoinProductNodeGroupTaskServiceState();
+      Operation createJoinTask = Operation.createPost(joinProductFactoryUri)
+            .setBody(joinTaskState)
+            .setReferer(getUri())
+            .setCompletion((op, err) -> {
+               if (err != null) {
+                  log(Level.SEVERE, "Error creating JoinProductNodeGroupTaskService. [operation=%s] [exception=%s]", op, err);
+                  return;
+               }
+               log(Level.INFO, "Successfully created task");
+            });
+      sendRequest(createJoinTask);
 
       return this;
    }
